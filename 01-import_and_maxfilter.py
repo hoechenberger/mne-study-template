@@ -281,7 +281,10 @@ def run_maxwell_filter(subject, session=None):
                                     f'{bids_basename}_nosss_raw.fif')
         raw_out.save(raw_fname_out, overwrite=True)
         if config.interactive:
-            raw_out.plot(n_channels=50, butterfly=True)
+            (raw_out
+             .copy()
+             .pick_types(meg=True)
+             .plot(n_channels=50))
 
         # Empty-room processing.
         #

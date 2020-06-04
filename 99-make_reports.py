@@ -92,8 +92,9 @@ def run_report(subject, session=None):
     fname_ave = op.join(deriv_path, bids_basename + '-ave.fif')
     fname_trans = op.join(deriv_path, 'sub-{}'.format(subject) + '-trans.fif')
     subjects_dir = config.get_fs_subjects_dir()
+    fs_subject = f'sub-{subject}'
     if op.exists(fname_trans):
-        rep = mne.Report(info_fname=fname_ave, subject=subject,
+        rep = mne.Report(info_fname=fname_ave, subject=fs_subject,
                          subjects_dir=subjects_dir)
     else:
         rep = mne.Report(info_fname=fname_ave)
@@ -123,8 +124,8 @@ def run_report(subject, session=None):
         # We can only plot the coregistration if we have a valid 3d backend.
         if mne.viz.get_3d_backend() is not None:
             fig = mne.viz.plot_alignment(evoked.info, fname_trans,
-                                         subject=subject,
-                                         subjects_dir=config.subjects_dir,
+                                         subject=fs_subject,
+                                         subjects_dir=subjects_dir,
                                          meg=True, dig=True, eeg=True)
             rep.add_figs_to_section(figs=fig, captions='Coregistration',
                                     section='Coregistration')
@@ -135,7 +136,7 @@ def run_report(subject, session=None):
                                         subject=subject, session=session))
 
         for evoked in evokeds:
-            msg = 'Rendering inverse solution for {evoked.comment} …'
+            msg = f'Rendering inverse solution for {evoked.comment} …'
             logger.info(gen_log_message(message=msg, step=99,
                                         subject=subject, session=session))
 
@@ -147,7 +148,7 @@ def run_report(subject, session=None):
                                                       inverse_str, hemi_str]))
 
             if op.exists(fname_stc + "-lh.stc"):
-                stc = mne.read_source_estimate(fname_stc, subject)
+                stc = mne.read_source_estimate(fname_stc, subject=fs_subject)
                 _, peak_time = stc.get_peak()
 
                 # Plot using 3d backend if available, and use Matplotlib

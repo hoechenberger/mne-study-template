@@ -54,8 +54,10 @@ def morph_stc(subject, session=None):
                                                 hemi_str]))
 
         stc = mne.read_source_estimate(fname_stc)
+
+        fs_subject = f'sub-{subject}'
         morph = mne.compute_source_morph(
-            stc, subject_from=subject, subject_to='fsaverage',
+            stc, subject_from=fs_subject, subject_to='fsaverage',
             subjects_dir=config.get_fs_subjects_dir())
         stc_fsaverage = morph.apply(stc)
         stc_fsaverage.save(fname_stc_fsaverage)

@@ -503,6 +503,9 @@ baseline = (None, 0)
 
 conditions = ['left', 'right']
 
+# conditions = ['left', 'right', 'auditory/left', 'auditory/right']
+# contrasts = [('right', 'left'), ('auditory/left', 'auditory/right')]
+
 ###############################################################################
 # ARTIFACT REMOVAL
 # ----------------

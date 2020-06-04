@@ -59,7 +59,8 @@ def run_forward(subject, session=None):
 
     mne.write_trans(fname_trans, trans)
 
-    src = mne.setup_source_space(subject, spacing=config.spacing,
+    fs_subject = f'sub-{subject}'
+    src = mne.setup_source_space(fs_subject, spacing=config.spacing,
                                  subjects_dir=config.get_fs_subjects_dir(),
                                  add_dist=False)
 
@@ -67,11 +68,11 @@ def run_forward(subject, session=None):
 
     # Here we only use 3-layers BEM only if EEG is available.
     if 'eeg' in config.ch_types:
-        model = mne.make_bem_model(subject, ico=4,
+        model = mne.make_bem_model(fs_subject, ico=4,
                                    conductivity=(0.3, 0.006, 0.3),
                                    subjects_dir=config.get_fs_subjects_dir())
     else:
-        model = mne.make_bem_model(subject, ico=4, conductivity=(0.3,),
+        model = mne.make_bem_model(fs_subject, ico=4, conductivity=(0.3,),
                                    subjects_dir=config.get_fs_subjects_dir())
 
     bem = mne.make_bem_solution(model)

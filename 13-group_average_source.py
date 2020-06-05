@@ -10,6 +10,8 @@ import os.path as op
 import itertools
 import logging
 
+import pandas as pd
+
 import mne
 from mne.parallel import parallel_func
 
@@ -22,6 +24,10 @@ logger = logging.getLogger('mne-study-template')
 
 
 def morph_stc(subject, session=None):
+    msg = 'Morphing source estimates to fsaverage subject …'
+    logger.info(gen_log_message(message=msg, subject=subject, session=session,
+                                step=13))
+
     deriv_path = config.get_subject_deriv_path(subject=subject,
                                                session=session,
                                                kind=config.get_kind())
@@ -33,16 +39,27 @@ def morph_stc(subject, session=None):
                                        run=None,
                                        processing=config.proc,
                                        recording=config.rec,
-                                       space=config.space
-                                       )
+                                       space=config.space)
 
-    morphed_stcs = []
-    for condition in config.conditions:
-        method = config.inverse_method
-        cond_str = 'cond-%s' % condition.replace(op.sep, '')
-        inverse_str = 'inverse-%s' % method
-        hemi_str = 'hemi'  # MNE will auto-append '-lh' and '-rh'.
-        morph_str = 'morph-fsaverage'
+    method = config.inverse_method
+    inverse_str = 'inverse-%s' % method
+    hemi_str = 'hemi'  # MNE will auto-append '-lh' and '-rh'.
+    morph_str = 'morph-fsaverage'
+
+    morphed_stcs = list()
+
+    conditions = config.conditions.copy()
+    conditions.extend(config.contrasts)
+    for condition in conditions:
+        if condition in config.conditions:
+            cond_str = 'cond-%s' % condition.replace(op.sep, '')
+        else:  # This is a contrast of two conditions.
+            contrast = condition
+            cond_1, cond_2 = contrast
+            cond_str = (f'contr-'
+                        f'{cond_1.replace(op.sep, "")}-'
+                        f'{cond_2.replace(op.sep, "")}')
+
         fname_stc = op.join(deriv_path, '_'.join([bids_basename, cond_str,
                                                   inverse_str, hemi_str]))
         fname_stc_fsaverage = op.join(deriv_path,
@@ -56,10 +73,17 @@ def morph_stc(subject, session=None):
             subjects_dir=config.get_fs_subjects_dir())
         stc_fsaverage = morph.apply(stc)
         stc_fsaverage.save(fname_stc_fsaverage)
-        morphed_stcs.append(stc_fsaverage)
 
-        del fname_stc, fname_stc_fsaverage
+        morphed_stc = pd.DataFrame(
+            dict(subject=pd.Series(subject, dtype='string'),
+                 session=pd.Series(session, dtype='string'),
+                 condition=pd.Series(cond_str, dtype='string'),
+                 stc=pd.Series(stc_fsaverage)))
 
+        morphed_stcs.append(morphed_stc)
+        del fname_stc, fname_stc_fsaverage, morphed_stc
+
+    morphed_stcs = pd.concat(morphed_stcs, ignore_index=True)
     return morphed_stcs
 
 
@@ -72,37 +96,55 @@ def main():
     mne.datasets.fetch_fsaverage(subjects_dir=config.get_fs_subjects_dir())
 
     parallel, run_func, _ = parallel_func(morph_stc, n_jobs=config.N_JOBS)
-    all_morphed_stcs = parallel(run_func(subject, session)
-                                for subject, session in
-                                itertools.product(config.get_subjects(),
-                                                  config.get_sessions()))
-    all_morphed_stcs = [morphed_stcs for morphed_stcs, subject in
-                        zip(all_morphed_stcs, config.get_subjects())]
-    mean_morphed_stcs = map(sum, zip(*all_morphed_stcs))
 
+    morphed_stcs = parallel(run_func(subject, session)
+                            for subject, session in
+                            itertools.product(config.get_subjects(),
+                                              config.get_sessions()))
+    morphed_stcs = (pd.concat(morphed_stcs, ignore_index=True)
+                    .sort_values(['subject', 'session', 'condition'])
+                    .reset_index(drop=True))
+    # We replace missing values with empty strings (could be anything, though),
+    # as we want to iterate over the DataFrame via groupby() later – and
+    # groupby() simply drops groups that have missing values in the grouping
+    # variable(s), which we need to avoid.
+    morphed_stcs = morphed_stcs.fillna('')
+
+    method = config.inverse_method
+    inverse_str = f'inverse-{method}'
+    hemi_str = 'hemi'  # MNE will auto-append '-lh' and '-rh'.
+    morph_str = 'morph-fsaverage'
     deriv_path = config.deriv_root
 
-    bids_basename = make_bids_basename(task=config.get_task(),
-                                       acquisition=config.acq,
-                                       run=None,
-                                       processing=config.proc,
-                                       recording=config.rec,
-                                       space=config.space)
+    conditions = config.conditions.copy()
+    conditions.extend(config.contrasts)
 
-    for condition, this_stc in zip(config.conditions, mean_morphed_stcs):
-        this_stc /= len(all_morphed_stcs)
+    grouped = morphed_stcs.groupby(['session', 'condition'])
+    for (session, condition), morphed_stc_subset in grouped:
+        # If session is an empty string, we have inserted it to replace a
+        # missing value. Make sure we set it to None again before creating the
+        # basename, or we'll end up with a meaningless "ses-" entity.
+        session = None if session == '' else session
 
-        method = config.inverse_method
+        msg = f'Calculating average source estimates for: {condition}'
+        logger.info(gen_log_message(message=msg, session=session, step=13))
+
+        bids_basename = make_bids_basename(task=config.get_task(),
+                                           session=session,
+                                           acquisition=config.acq,
+                                           processing=config.proc,
+                                           recording=config.rec,
+                                           space=config.space)
+
+        stc_avg = (morphed_stc_subset['stc'].sum() /
+                   len(morphed_stc_subset['stc']))
         cond_str = 'cond-%s' % condition.replace(op.sep, '')
-        inverse_str = 'inverse-%s' % method
-        hemi_str = 'hemi'  # MNE will auto-append '-lh' and '-rh'.
-        morph_str = 'morph-fsaverage'
 
         fname_stc_avg = op.join(deriv_path, '_'.join(['average',
                                                       bids_basename, cond_str,
                                                       inverse_str, morph_str,
                                                       hemi_str]))
-        this_stc.save(fname_stc_avg)
+        stc_avg.save(fname_stc_avg)
 
     msg = 'Completed Step 13: Grand-average source estimates'
     logger.info(gen_log_message(step=13, message=msg))

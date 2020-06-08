@@ -113,15 +113,11 @@ def find_bad_channels(raw, subject, session, task, run):
     raw_lp_filtered_for_maxwell = (raw.copy()
                                    .filter(l_freq=None,
                                            h_freq=40))
-    auto_bad_results = find_bad_channels_maxwell(
+    auto_noisy_chs, auto_flat_chs, scores = find_bad_channels_maxwell(
         raw=raw_lp_filtered_for_maxwell,
         calibration=config.mf_cal_fname,
         cross_talk=config.mf_ctc_fname,
         return_scores=True)
-
-    auto_noisy_chs, auto_flat_chs = auto_bad_results[:2]
-    bin_edges, scores_flat, scores_noisy = auto_bad_results[2:]
-    del raw_lp_filtered_for_maxwell, auto_bad_results
 
     preexisting_bads = raw.info['bads'].copy()
     bads = preexisting_bads.copy()
@@ -144,51 +140,61 @@ def find_bad_channels(raw, subject, session, task, run):
                                 subject=subject, session=session))
 
     import matplotlib.pyplot as plt
-    from matplotlib import colors
-    import matplotlib.patches as mpatches
-    import numpy as np
+    import seaborn as sns
+    
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.heatmap(scores['scores_noisy'], ax=ax)
+    
+    # import matplotlib.pyplot as plt
+    # from matplotlib import colors
+    # import matplotlib.patches as mpatches
+    # import numpy as np
 
-    bads_fig_map = {
-        'good': {'color_name': 'white',
-                 'color_code': 0},
-        'flat': {'color_name': 'blue',
-                 'color_code': 1},
-        'noisy': {'color_name': 'red',
-                  'color_code': 2},
-        'bad (manual)': {'color_name': 'gray',
-                         'color_code': 3},
-    }
+    # bads_fig_map = {
+    #     'good': {'color_name': 'white',
+    #              'color_code': 0},
+    #     'flat': {'color_name': 'blue',
+    #              'color_code': 1},
+    #     'noisy': {'color_name': 'red',
+    #               'color_code': 2},
+    #     'bad (manual)': {'color_name': 'gray',
+    #                      'color_code': 3},
+    # }
 
-    bads_to_plot = np.zeros_like(scores_flat, dtype=int)
-    bads_to_plot[[True if s is True else False
-                  for s in scores_flat]] = 1
-    bads_to_plot[[True if s is True else False
-                  for s in scores_noisy]] = 2
+    # scores_flat = scores['scores_flat']
+    # scores_noisy = scores['scores_noisy']
 
-    for ch_name in preexisting_bads:
-        if not ch_name.startswith('MEG'):
-            continue
-        ch_idx = (raw
-                  .copy()
-                  .pick_types(meg=True, exclude=[])
-                  .ch_names
-                  .index(ch_name))
-        bads_to_plot[ch_idx, :] = 3
+    # bads_to_plot = np.zeros_like(scores_flat, dtype=int)
+    # bads_to_plot[[True if s is True else False
+    #               for s in scores_flat]] = 1
+    # bads_to_plot[[True if s is True else False
+    #               for s in scores_noisy]] = 2
 
-    cmap = colors.ListedColormap([x['color_name']
-                                  for x in bads_fig_map.values()])
-    bounds = [x['color_code'] for x in bads_fig_map.values()]
-    bounds.append(bounds[-1] + 1)  # Add upper bound
-    norm = colors.BoundaryNorm(bounds, cmap.N)
+    # for ch_name in preexisting_bads:
+    #     if not ch_name.startswith('MEG'):
+    #         continue
+    #     ch_idx = (raw
+    #               .copy()
+    #               .pick_types(meg=True, exclude=[])
+    #               .ch_names
+    #               .index(ch_name))
+    #     bads_to_plot[ch_idx, :] = 3
 
-    fig = plt.figure(figsize=(10, 5), constrained_layout=True)
-    gs = fig.add_gridspec(ncols=3, nrows=3,
-                          width_ratios=[1.5, 1.5, 1],
-                          height_ratios=[1, 1, 1])
-    ax = dict(segments=fig.add_subplot(gs[:, :-1]),
-              legend=fig.add_subplot(gs[0, -1]),
-              topo_mag=fig.add_subplot(gs[1, -1]),
-              topo_grad=fig.add_subplot(gs[2, -1]))
+    # cmap = colors.ListedColormap([x['color_name']
+    #                               for x in bads_fig_map.values()])
+    # bounds = [x['color_code'] for x in bads_fig_map.values()]
+    # bounds.append(bounds[-1] + 1)  # Add upper bound
+    # norm = colors.BoundaryNorm(bounds, cmap.N)
+
+    # fig = plt.figure(figsize=(10, 5), constrained_layout=True)
+    # gs = fig.add_gridspec(ncols=3, nrows=3,
+    #                       width_ratios=[1.5, 1.5, 1],
+    #                       height_ratios=[1, 1, 1])
+    # ax = dict(segments=fig.add_subplot(gs[:, :-1]),
+    #           legend=fig.add_subplot(gs[0, -1]),
+    #           topo_mag=fig.add_subplot(gs[1, -1]),
+    #           topo_grad=fig.add_subplot(gs[2, -1]))
 
     # bad_mag_picks = raw.copy().pick_types(meg='mag').info['bads']
     # bad_grad_picks = raw.copy().pick_types(meg='grad').info['bads']
@@ -209,31 +215,31 @@ def find_bad_channels(raw, subject, session, task, run):
     #     raw.plot_sensors(axes=ax['topo_grad'])
     #     del ax['topo_grad'].collections[0]
 
-    ax['topo_mag'].set_title('Magnetometers')
-    ax['topo_grad'].set_title('Gradiometers')
+    # ax['topo_mag'].set_title('Magnetometers')
+    # ax['topo_grad'].set_title('Gradiometers')
 
-    ax['segments'].imshow(bads_to_plot, interpolation='nearest',
-                          cmap=cmap, norm=norm, aspect='auto')
-    [ax['segments'].axvline(x, ls='--', lw=0.5, color='lightgray')
-     for x in range(1, bads_to_plot.shape[1])]
-    ax['segments'].set_xlabel('Time Window', fontsize=12, fontweight='bold')
-    ax['segments'].set_ylabel('Channel Index', fontsize=12, fontweight='bold')
+    # ax['segments'].imshow(bads_to_plot, interpolation='nearest',
+    #                       cmap=cmap, norm=norm, aspect='auto')
+    # [ax['segments'].axvline(x, ls='--', lw=0.5, color='lightgray')
+    #  for x in range(1, bads_to_plot.shape[1])]
+    # ax['segments'].set_xlabel('Time Window', fontsize=12, fontweight='bold')
+    # ax['segments'].set_ylabel('Channel Index', fontsize=12, fontweight='bold')
 
     # https://stackoverflow.com/a/40666180
     # create a patch (proxy artist) for every color
-    patches = [mpatches.Patch(color=x['color_name'],
-                              label=label)
-               for label, x in bads_fig_map.items()]
+    # patches = [mpatches.Patch(color=x['color_name'],
+    #                           label=label)
+    #            for label, x in bads_fig_map.items()]
     # put those patched as legend-handles into the legend
     # ax.legend(title='Signal Quality', handles=patches,
     #           bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
-    ax['legend'].legend(title='Signal Quality', handles=patches, loc='center')
-    ax['legend'].set_axis_off()
-    fig.suptitle(f'Automated MEG Signal Quality Estimation '
-                 f'({bads_to_plot.shape[1]} Time Windows)', fontsize=14,
-                 fontweight='bold')
-    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
+    # ax['legend'].legend(title='Signal Quality', handles=patches, loc='center')
+    # ax['legend'].set_axis_off()
+    # fig.suptitle(f'Automated MEG Signal Quality Estimation '
+    #              f'({bads_to_plot.shape[1]} Time Windows)', fontsize=14,
+    #              fontweight='bold')
+    # fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # plt.show()
 
     # Write the bad channels to disk.
     deriv_path = config.get_subject_deriv_path(subject=subject,
